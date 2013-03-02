@@ -1,0 +1,1 @@
+This is a directory for SWF file composer/decomposer library

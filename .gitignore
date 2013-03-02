@@ -11,3 +11,11 @@
 *.lai
 *.la
 *.a
+
+# Log files
+*.log
+
+# Visual Studio files and directories
+*Debug
+*Release
+
