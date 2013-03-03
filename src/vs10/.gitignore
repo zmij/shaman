@@ -1,0 +1,6 @@
+# VisualStudio specific files
+*.suo
+*.opensdf
+*.sdf
+*.user
+*ipch
