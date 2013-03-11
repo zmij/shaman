@@ -23,7 +23,7 @@ You can use provided CMake file to build the library or manually build a library
 from following files:
 
 (LZMA_SDK)/LzmaEnc.c
-(LZMA_SDK)/LzmaEnc.c
+(LZMA_SDK)/LzmaDec.c
 (LZMA_SDK)/LzFind.c
 lzma.cpp
 
