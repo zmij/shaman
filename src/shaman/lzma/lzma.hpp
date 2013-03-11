@@ -40,6 +40,8 @@ typedef uint32_t uint;
 typedef uint8_t byte;
 typedef uint32_t ulong;
 
+typedef void* (*lzma_alloc_func)(void*, lzma::uint, lzma::uint);
+typedef void (*lzma_free_func)(void*, void*);
 //@}
 
 /**
@@ -83,29 +85,77 @@ public:
 	static void deallocate(void* self, void* address);
 };
 
-class BOOST_IOSTREAMS_DECL lzma_base {
+struct lzma_encode_state;
+
+template < bool Compress >
+class lzma_base;
+
+template <>
+class lzma_base< true > {
 public:
 	typedef char char_type;
 protected:
 	lzma_base();
 	~lzma_base();
 
-    void
-    before( const char*& src_begin, const char* src_end,
-                 char*& dest_begin, char* dest_end );
-    void
-    after( const char*& src_begin, char*& dest_begin,
-                bool compress );
-
-    int
-    compress(int flush);
-    int
-    decompress(int flush);
+	template< typename Alloc >
+	void
+	init(lzma_params const& p, lzma_allocator< Alloc >& lzalloc);
 
     void
-    reset(bool compress, bool realloc);
+    reset(bool realloc);
+public:
+	bool
+	filter( const char*& src_begin, const char* src_end,
+			char*& dest_begin, char* dest_end, bool flush);
 private:
-	void*		stream_;
+    void
+    do_init( lzma_params const& p,
+		#if !BOOST_WORKAROUND(BOOST_MSVC, < 1300)
+    		lzma::lzma_alloc_func,
+    		lzma::lzma_free_func,
+		#endif
+    		void* derived
+    );
+private:
+    lzma_encode_state*		state_;
+};
+
+struct lzma_decode_state;
+/**
+ * Decompressor implementation
+ */
+template<>
+class lzma_base< false > {
+public:
+	typedef char char_type;
+protected:
+	lzma_base();
+	~lzma_base();
+
+	template< typename Alloc >
+	void
+	init(lzma_params const& p, lzma_allocator< Alloc >& lzalloc);
+
+    void
+    reset(bool realloc);
+public:
+	bool
+	filter( const char*& src_begin, const char* src_end,
+			char*& dest_begin, char* dest_end, bool flush);
+
+
+private:
+    void
+    do_init( lzma_params const& p,
+		#if !BOOST_WORKAROUND(BOOST_MSVC, < 1300)
+    		lzma::lzma_alloc_func,
+    		lzma::lzma_free_func,
+		#endif
+    		void* derived
+    );
+private:
+    lzma_decode_state*		state_;
 };
 
 /**
@@ -113,27 +163,21 @@ private:
  * lzma function LzmaEncode
  */
 template< typename Alloc = std::allocator<char> >
-class lzma_compressor_impl : public lzma_base, public lzma_allocator< Alloc > {
+class lzma_compressor_impl : public lzma_base< true >, public lzma_allocator< Alloc > {
 public:
 	lzma_compressor_impl(lzma_params const& p = lzma_params());
 	~lzma_compressor_impl();
 
-	bool
-	filter( const char*& src_begin, const char* src_end,
-			char*& dest_begin, char* dest_end, bool flush);
 	void
 	close();
 };
 
 template < typename Alloc = std::allocator<char> >
-class lzma_decompressor_impl : public lzma_base, public lzma_allocator< Alloc > {
+class lzma_decompressor_impl : public lzma_base< false >, public lzma_allocator< Alloc > {
 public:
 	lzma_decompressor_impl(lzma_params const& p = lzma_params());
 	~lzma_decompressor_impl();
 
-	bool
-	filter( const char*& src_begin, const char* src_end,
-			char*& dest_begin, char* dest_end, bool flush);
 	void
 	close();
 	bool

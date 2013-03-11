@@ -35,42 +35,77 @@ template<typename Alloc, typename Base>
 void
 lzma_allocator<Alloc, Base>::deallocate(void* self, void* address)
 {
-	char* ptr = reinterpret_cast<char*>(address) - sizeof(size_type);
-	size_type len = *reinterpret_cast<size_type*>(ptr) + sizeof(size_type);
-	static_cast<allocator_type*>(self)->deallocate(ptr, len);
+	if (address != 0) {
+		char* ptr = reinterpret_cast<char*>(address) - sizeof(size_type);
+		size_type len = *reinterpret_cast<size_type*>(ptr) + sizeof(size_type);
+		static_cast<allocator_type*>(self)->deallocate(ptr, len);
+	}
 }
+
+//------------------Implementation of lzma_base (compressor)------------------//
+template< typename Alloc >
+void
+lzma_base< true >::init(lzma_params const& p, lzma_allocator< Alloc >& lzalloc)
+{
+	bool custom = lzma_allocator< Alloc >::custom;
+	do_init(
+		p,
+		#if !BOOST_WORKAROUND(BOOST_MSVC, < 1300)
+			custom ? lzma_allocator< Alloc >::allocate : 0,
+			custom ? lzma_allocator< Alloc >::deallocate : 0,
+		#endif
+			&lzalloc
+	);
+}
+
+//------------------Implementation of lzma_base (decompressor)----------------//
+template< typename Alloc >
+void
+lzma_base< false >::init(lzma_params const& p, lzma_allocator< Alloc >& lzalloc)
+{
+	//bool custom = lzma_allocator< Alloc >::custom;
+	do_init(
+		p,
+		#if !BOOST_WORKAROUND(BOOST_MSVC, < 1300)
+			lzma_allocator< Alloc >::allocate,
+			lzma_allocator< Alloc >::deallocate,
+		#endif
+			&lzalloc
+	);
+}
+
 
 //------------------Implementation of lzma_compressor_impl--------------------//
 template< typename Alloc >
 lzma_compressor_impl<Alloc>::lzma_compressor_impl(lzma_params const& p)
 {
-	// TODO Init LZMA params, pass self as allocator
+	init(p, static_cast< lzma_allocator< Alloc >& >(*this));
 }
 
 template< typename Alloc >
 lzma_compressor_impl<Alloc>::~lzma_compressor_impl()
 {
-	reset(true, false);
+	reset(false);
 }
 
-template< typename Alloc >
-bool
-lzma_compressor_impl<Alloc>::filter( const char*& src_begin, const char* src_end,
-		char*& dest_begin, char* dest_end, bool flush)
-{
-	before(src_begin, src_end, dest_begin, dest_end);
-	int result = compress(flush/* TODO Convert into LZMA flush flag (if any) */);
-	after(src_begin, dest_begin, true);
-	lzma_error::check BOOST_PREVENT_MACRO_SUBSTITUTION(result);
-	/* TODO check stream end */
-	return false;
-}
+//template< typename Alloc >
+//bool
+//lzma_compressor_impl<Alloc>::filter( const char*& src_begin, const char* src_end,
+//		char*& dest_begin, char* dest_end, bool flush)
+//{
+//	before(src_begin, src_end, dest_begin, dest_end);
+//	int result = compress(flush/* TODO Convert into LZMA flush flag (if any) */);
+//	after(src_begin, dest_begin, true);
+//	lzma_error::check BOOST_PREVENT_MACRO_SUBSTITUTION(result);
+//	/* TODO check stream end */
+//	return !flush;
+//}
 
 template< typename Alloc >
 void
 lzma_compressor_impl<Alloc>::close()
 {
-	reset(true, true);
+	reset(true);
 }
 
 //------------------Implementation of lzma_decompressor_impl------------------//
@@ -78,27 +113,13 @@ template< typename Alloc >
 lzma_decompressor_impl<Alloc>::lzma_decompressor_impl(lzma_params const& p) :
 	eof_(false)
 {
-	// TODO Init LZMA params, pass self as allocator
+	init(p, static_cast< lzma_allocator< Alloc >& >(*this));
 }
 
 template< typename Alloc >
 lzma_decompressor_impl<Alloc>::~lzma_decompressor_impl()
 {
-	reset(false, false);
-}
-
-template< typename Alloc >
-bool
-lzma_decompressor_impl<Alloc>::filter( const char*& src_begin, const char* src_end,
-		char*& dest_begin, char* dest_end, bool flush)
-{
-	before(src_begin, src_end, dest_begin, dest_end);
-	int result = decompress(true /*TODO Pass LZMA flush flag (if any) */ );
-	after(src_begin, dest_begin, false);
-	lzma_error::check BOOST_PREVENT_MACRO_SUBSTITUTION(result);
-	/* TODO check stream end */
-	eof_ = true;
-	return false;
+	reset(false);
 }
 
 template< typename Alloc >
@@ -106,7 +127,7 @@ void
 lzma_decompressor_impl<Alloc>::close()
 {
 	eof_ = false;
-	reset(false, true);
+	reset(true);
 }
 
 } // namespace detail

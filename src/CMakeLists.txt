@@ -9,5 +9,3 @@ include_directories(
 )
 
 add_subdirectory(shaman)
-
-add_subdirectory(tests)

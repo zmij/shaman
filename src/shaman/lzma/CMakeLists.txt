@@ -4,12 +4,55 @@
 
 cmake_minimum_required(VERSION 2.6)
 
+if (NOT LZMA_SDK)
+	find_path(
+		LZMA_SDK
+		LzmaEnc.c
+		HINTS ${LZMA_INCLUDE_DIR}/lzma
+	)
+endif()
+
+if (NOT LZMA_SDK)
+	message(FATAL_ERROR "LZMA SDK directory not found. Please specify directory containing LZMA_SDK")
+endif()
+
+include_directories(
+	${LZMA_SDK}
+)
+
+add_definitions("-D_7ZIP_ST")
+
 set(
 	SHAMAN_LZMA_SRCS
 	lzma.cpp
+	${LZMA_SDK}/LzmaEnc.c
+	${LZMA_SDK}/LzFind.c
+	${LZMA_SDK}/LzmaDec.c
 )
 
 add_library(
 	shaman_lzma
 	${SHAMAN_LZMA_SRCS}
+)
+
+## Test programs
+
+add_executable(
+	lzma-decompress
+	lzma-decompress.cpp
+)
+
+target_link_libraries(
+	lzma-decompress
+	shaman_lzma
+)
+
+add_executable(
+	lzma-compress
+	lzma-compress.cpp
+)
+
+target_link_libraries(
+	lzma-compress
+	shaman_lzma
 )
