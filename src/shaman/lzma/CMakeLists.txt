@@ -30,6 +30,12 @@ set(
 	${LZMA_SDK}/LzmaDec.c
 )
 
+include_directories(
+	${CMAKE_CURRENT_SOURCE_DIR}/../..
+)
+
+add_definitions("-std=c++0x")
+
 add_library(
 	shaman_lzma
 	${SHAMAN_LZMA_SRCS}
