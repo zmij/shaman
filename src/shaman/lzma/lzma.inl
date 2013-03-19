@@ -51,8 +51,8 @@ lzma_base< true >::init(lzma_params const& p, lzma_allocator< Alloc >& lzalloc)
 	do_init(
 		p,
 		#if !BOOST_WORKAROUND(BOOST_MSVC, < 1300)
-			custom ? lzma_allocator< Alloc >::allocate : 0,
-			custom ? lzma_allocator< Alloc >::deallocate : 0,
+			lzma_allocator< Alloc >::allocate,
+			lzma_allocator< Alloc >::deallocate,
 		#endif
 			&lzalloc
 	);

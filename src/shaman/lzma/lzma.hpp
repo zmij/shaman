@@ -12,6 +12,7 @@
 #include <iosfwd>            // streamsize.
 #include <memory>            // allocator, bad_alloc.
 #include <new>
+
 #include <boost/config.hpp>  // MSVC, STATIC_CONSTANT, DEDUCED_TYPENAME, DINKUM.
 #include <boost/cstdint.hpp> // uint*_t
 #include <boost/detail/workaround.hpp>
@@ -23,6 +24,8 @@
 #include <boost/iostreams/filter/symmetric.hpp>
 #include <boost/iostreams/pipeline.hpp>
 #include <boost/type_traits/is_same.hpp>
+
+#include <shaman/util/ranged_value.hpp>
 
 // Must come last.
 #ifdef BOOST_MSVC
@@ -38,17 +41,116 @@ namespace lzma {
 /** @name Typedefs */
 typedef uint32_t uint;
 typedef uint8_t byte;
-typedef uint32_t ulong;
+typedef uint64_t ulong;
+typedef unsigned char byte;
 
 typedef void* (*lzma_alloc_func)(void*, lzma::uint, lzma::uint);
 typedef void (*lzma_free_func)(void*, void*);
 //@}
 
+//@{
+/** @name Constants */
+extern const lzma::uint PROPERTIES_SIZE;
+//@}
+
+enum lzma_algo {
+	LZMA_FAST,
+	LZMA_NORMAL
+};
+
+enum lzma_mode {
+	LZMA_HASH_CHAIN,
+	LZMA_BIN_TREE
+};
+
 /**
  * Parameters for LZMA library
  */
 struct lzma_params {
+	//@{
+	/** @name Typedefs */
+	/**
+	 * [0, 9], default = 5
+	 */
+	typedef util::ranged_value< uint, 0, 9, 5 >		level_type;
 
+	//@{
+	/** @name Typedefs for esoteric params */
+	/**
+	 * [0, 8], default = 3
+	 */
+	typedef util::ranged_value< uint, 0, 8, 3 >		lc_type;
+	/**
+	 * [0, 4], default = 0
+	 */
+	typedef util::ranged_value< uint, 0, 4 >		lp_type;
+	/**
+	 * [0, 4], default = 2
+	 */
+	typedef util::ranged_value< uint, 0, 4, 2 >		pb_type;
+	//@}
+
+	/**
+	 * [5, 273], default = 32
+	 * TODO Move 273 (LZMA_MATCH_LEN_MAX) to a constant
+	 */
+	typedef util::ranged_value< uint, 5, 273, 32 >	fast_bytes_size_type;
+	/**
+	 * [2, 4], default = 4
+	 */
+	typedef util::ranged_value< uint, 2, 4, 4 >		hash_bytes_size_type;
+	/**
+	 * [1, 1 << 30], default = 32
+	 */
+	typedef util::ranged_value< uint, 1, 1 << 30, 32>	match_finder_cycles_type;
+
+	/**
+	 * 32 bit [(1 << 12), (1 << 27)]
+	 * 64 bit [(1 << 12), (1 << 30)]
+	 * default = (1 << 24)
+	 */
+	typedef util::ranged_value< uint, 1 << 12, 1 << 30, 1 << 24 >
+			dictionary_size_type;
+	//@}
+	//@{
+	/** @name Member data fields */
+
+	ulong						size_estimate;
+
+	level_type					level;
+
+	lzma_algo					algo;
+	lzma_mode					mode;
+
+	//@{
+	/** @name Esoteric params, TODO refactor to literal names */
+	lc_type						lc;
+	lp_type						lp;
+	pb_type						pb;
+	//@}
+
+	fast_bytes_size_type		fb;
+	hash_bytes_size_type		hash_bytes_size;
+	match_finder_cycles_type	match_finder_cycles;
+	dictionary_size_type		dict_size;
+	//@}
+
+	lzma_params(
+			ulong size_estimate = 0,
+			uint level = level_type::default_value,
+			lzma_algo = LZMA_NORMAL,
+			lzma_mode = LZMA_BIN_TREE,
+			uint lc = lc_type::default_value,
+			uint lp = lp_type::default_value,
+			uint pb = pb_type::default_value,
+			uint fb = fast_bytes_size_type::default_value,
+			uint hash_bytes_size = hash_bytes_size_type::default_value,
+			uint match_finder_cycles = match_finder_cycles_type::default_value,
+			uint dict_size = 0
+	);
+
+	void
+	write( char*& dest_begin, char* dest_end ) const;
 };
 
 class BOOST_IOSTREAMS_DECL lzma_error : public BOOST_IOSTREAMS_FAILURE {

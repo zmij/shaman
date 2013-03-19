@@ -20,21 +20,23 @@ include_directories(
 	${LZMA_SDK}
 )
 
+add_definitions("-std=c++0x")
 add_definitions("-D_7ZIP_ST")
 
 set(
 	SHAMAN_LZMA_SRCS
 	lzma.cpp
-	${LZMA_SDK}/LzmaEnc.c
-	${LZMA_SDK}/LzFind.c
+	detail/lzma_encoder.cpp
+	detail/match_finder.cpp
+	
+	LzmaEnc.c
 	${LZMA_SDK}/LzmaDec.c
+	${LZMA_SDK}/LzFind.c
 )
 
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
-
-add_definitions("-std=c++0x")
 
 add_library(
 	shaman_lzma
@@ -42,6 +44,17 @@ add_library(
 )
 
 ## Test programs
+
+# temporary
+add_executable(
+	lzma-encode
+	lzma-encode.cpp
+)
+
+target_link_libraries(
+	lzma-encode
+	shaman_lzma
+)
 
 add_executable(
 	lzma-decompress

@@ -9,11 +9,83 @@
 #include <lzma/LzmaEnc.h>
 #include <lzma/LzmaDec.h>
 
+#include <shaman/lzma/detail/lzma_encoder.hpp>
+
 // TODO Remove this include
 #include <iostream>
 
 namespace shaman {
 namespace lzma {
+
+const uint PROPERTIES_SIZE = LZMA_PROPS_SIZE;
+
+//------------------Implementation of lzma_params-----------------------------//
+lzma_params::lzma_params(
+			ulong sz,
+			uint level_,
+			lzma_algo algo_,
+			lzma_mode mode_,
+			uint lc_,
+			uint lp_,
+			uint pb_,
+			uint fb_,
+			uint hbs,
+			uint mfc,
+			uint ds
+		) :
+		size_estimate(sz),
+		level(level_),
+		algo(algo_),
+		mode(mode_),
+		lc(lc_),
+		lp(lp_),
+		pb(pb_),
+		fb(fb_),
+		hash_bytes_size(hbs),
+		match_finder_cycles(mfc),
+		dict_size()
+{
+	// Perform parameters normalization
+	if (ds == 0)
+		dict_size = level <= 5 ? (1 << (level * 2 + 14)) : (level == 6 ? (1 << 25) : (1 << 26));
+	else
+		dict_size = ds;
+
+	if (fb.defaulted()) fb = (level < 7 ? 32 : 64);
+	if (match_finder_cycles.defaulted()) {
+		match_finder_cycles = (16 + (fb >> 1)) >> (mode == LZMA_HASH_CHAIN ? 0 : 1);
+	}
+}
+
+void
+lzma_params::write( char*& dest_begin, char* dest_end ) const
+{
+	size_t size = dest_end - dest_begin;
+	if (size < PROPERTIES_SIZE + sizeof(ulong))
+		throw std::runtime_error("Buffer size is too small for LZMA properties");
+
+	*dest_begin++ = (byte)(( pb * 5 + lp ) * 9 + lc);
+	uint ds = dict_size;
+	for (uint i = 11; i <= 30; ++i) {
+		if (ds <= (uint)(2 << i)) {
+			ds = 2 << i;
+			break;
+		}
+		if (ds <= (uint)(3 << i)) {
+			ds = 3 << i;
+			break;
+		}
+	}
+
+	for (uint i = 0; i < PROPERTIES_SIZE - 1; ++i) {
+		*dest_begin++ = (byte)(ds >> (i * 8));
+	}
+
+	// Write stream size
+	for (uint i = 0; i < sizeof(ulong); ++i) {
+		*dest_begin++ = (unsigned char)(size_estimate >> (i * 8));
+	}
+}
 
 //------------------Implementation of lzma_error------------------------------//
 lzma_error::lzma_error(int error) :
@@ -40,6 +112,7 @@ namespace detail {
 
 namespace {
 
+//----------------------------------------------------------------------------//
 /**
  * LZMA facade for standard allocator
  */
@@ -74,6 +147,10 @@ struct sz_alloc_impl : ISzAlloc {
 
 } // namespace
 
+/**
+ * Base lzma state. Contains an instance of allocator compatible with
+ * LZMA SDK and flag that the state needs further initialization.
+ */
 struct lzma_state_base {
 	sz_alloc_impl alloc_;
 	bool initialized_;
@@ -92,11 +169,18 @@ struct lzma_state_base {
 	}
 };
 
+/**
+ * Private state holder for lzma compressor
+ */
 struct lzma_encode_state : lzma_state_base {
+	detail::lzma_encoder enc;
+
 	lzma_encode_state(void* d,
 			lzma::lzma_alloc_func af,
-			lzma::lzma_free_func ff) :
-		lzma_state_base(d, af, ff)
+			lzma::lzma_free_func ff,
+			lzma::lzma_params const& p) :
+		lzma_state_base(d, af, ff),
+		enc(d, af, ff, p)
 	{
 	}
 
@@ -106,21 +190,23 @@ struct lzma_encode_state : lzma_state_base {
 	}
 };
 
+/**
+ * Private state holder for lzma decompressor
+ */
 struct lzma_decode_state : lzma_state_base {
-	CLzmaDec state;
+	CLzmaDec decHandle_;
 
 	lzma_decode_state(void* d,
 			lzma::lzma_alloc_func af,
 			lzma::lzma_free_func ff) :
 		lzma_state_base(d, af, ff)
 	{
-		LzmaDec_Construct(&state);
+		LzmaDec_Construct(&decHandle_);
 	}
 	virtual
 	~lzma_decode_state()
 	{
-		//std::cerr << "Destroy decode state\n";
-		LzmaDec_Free(&state, &alloc_);
+		LzmaDec_Free(&decHandle_, &alloc_);
 	}
 };
 
@@ -130,7 +216,7 @@ lzma_base<true>::lzma_base() :
 		state_(nullptr)
 {
 }
-//
+
 lzma_base<true>::~lzma_base()
 {
 	delete state_;
@@ -146,15 +232,30 @@ lzma_base<true>::do_init( lzma_params const& p,
 )
 {
 	// TODO Do smth with the workaround
-	state_ = new lzma_encode_state(derived, af, ff);
+	state_ = new lzma_encode_state(derived, af, ff, p);
 }
 
 bool
 lzma_base<true>::filter(const char*& src_begin, const char* src_end,
 		char*& dest_begin, char* dest_end, bool flush)
 {
-	// TODO Implement compression
-	return false;
+	size_t in_sz = src_end - src_begin;
+	size_t out_sz = dest_end - dest_begin;
+
+	std::cerr << "Input buffer size " << (src_end - src_begin)
+			<< " output buffer size " << (dest_end - dest_begin)
+			<< (flush ? " " : " no ") << "flush\n";
+	char* dest_orig = dest_begin;
+
+	bool encoded = state_->enc(src_begin, src_end, dest_begin, dest_end);
+
+	std::cerr << "After encoding input " << (src_end - src_begin)
+			<< " output " <<  (dest_end - dest_begin)
+			<< " encoding result " << (encoded ? "true" : "false") << "\n";
+
+	return src_begin == src_end // consumed all
+			&& (in_sz != 0 || dest_orig != dest_begin) // output was made
+	;
 }
 
 void
@@ -163,7 +264,7 @@ lzma_base<true>::reset(bool realloc)
 	lzma_encode_state* old = state_;
 	if (realloc) {
 		state_ = new lzma_encode_state(old->alloc_.derived,
-				old->alloc_.alloc_func, old->alloc_.free_func);
+				old->alloc_.alloc_func, old->alloc_.free_func, old->enc.params());
 	} else {
 		state_ = nullptr;
 	}
@@ -210,16 +311,16 @@ lzma_base<false>::filter(const char*& src_begin, const char* src_end,
 		src_begin += sizeof(header);
 		in_sz -= sizeof(header);
 
-		int result = LzmaDec_Allocate(&state_->state, header, LZMA_PROPS_SIZE, &state_->alloc_);
+		int result = LzmaDec_Allocate(&state_->decHandle_, header, LZMA_PROPS_SIZE, &state_->alloc_);
 		lzma_error::check BOOST_PREVENT_MACRO_SUBSTITUTION(result);
 
-		LzmaDec_Init(&state_->state);
+		LzmaDec_Init(&state_->decHandle_);
 
 		state_->initialized_ = true;
 	}
 
 	ELzmaStatus status;
-	int result = LzmaDec_DecodeToBuf(&state_->state,
+	int result = LzmaDec_DecodeToBuf(&state_->decHandle_,
 			reinterpret_cast<unsigned char*>(dest_begin), &out_sz,
 			reinterpret_cast<unsigned char const*>(src_begin), &in_sz,
 			LZMA_FINISH_ANY, &status);

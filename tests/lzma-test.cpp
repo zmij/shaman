@@ -23,6 +23,10 @@
 
 #include "config.hpp"
 
+/**
+ * Test method - read compressed file prepared by external native LZMA utility,
+ * decompress it and compare with original data.
+ */
 BOOST_AUTO_TEST_CASE( CheckLZMADecompression )
 {
 	namespace iostreams = boost::iostreams;
@@ -55,4 +59,46 @@ BOOST_AUTO_TEST_CASE( CheckLZMADecompression )
 
 	BOOST_REQUIRE_EQUAL( inflated_str.size(), ethalon_str.size() );
 	BOOST_REQUIRE_EQUAL( inflated_str, ethalon_str );
+}
+
+/**
+ * Test method - read uncompressed file, compress it, decompress it and
+ * compare result with original data.
+ * Additional test - compare with compressed data prepared with native LZMA
+ * utility
+ */
+BOOST_AUTO_TEST_CASE( CheckLZMACompression )
+{
+	namespace iostreams = boost::iostreams;
+
+	BOOST_REQUIRE_MESSAGE(!shaman::test::COMPRESSED_FILE.empty(),
+			"Test file with compressed data is not configured");
+	BOOST_REQUIRE_MESSAGE(!shaman::test::UNCOMPRESSED_FILE.empty(),
+			"Test file with uncompressed data is not configured");
+
+	// Load ehtalon test data
+	std::ifstream ethalon_file( shaman::test::UNCOMPRESSED_FILE );
+	std::ostringstream ethalon;
+	iostreams::copy( ethalon_file, ethalon );
+
+	std::string const& ethalon_str = ethalon.str();
+
+	BOOST_REQUIRE_MESSAGE( !ethalon_str.empty(),
+			"Ethalon uncompressed file is empty" );
+
+	std::ifstream uncompressed_file( shaman::test::UNCOMPRESSED_FILE );
+
+	iostreams::filtering_istreambuf sbuf;
+	sbuf.push( shaman::lzma::lzma_compressor() );
+	sbuf.push( uncompressed_file );
+
+	std::ostringstream deflated;
+	iostreams::copy( sbuf, deflated );
+
+	std::string const& deflated_str = deflated.str();
+
+	BOOST_REQUIRE_MESSAGE( !deflated_str.empty(),
+			"Output stream is empty after compression" );
+
+	std::cerr << "Deflated stream size " << deflated_str.size() << "\n";
 }
